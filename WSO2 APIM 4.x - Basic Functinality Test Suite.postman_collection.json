@@ -1,0 +1,3081 @@
+{
+  "info": {
+    "_postman_id": "77f92713-c33d-4c77-b69a-81f214ceefaf",
+    "name": "WSO2 APIM 4.x - Basic Functinality Test Suite",
+    "description": "## Comprehensive automated basic functionality test suite for WSO2 API Manager 4.x.x.\n\n**Run Order:** 00 → 12 using Collection Runner.  \n**Prerequisites:** Set control_plane_hostname, gateway_hostname, admin_username, admin_password in environment.  \n**Note:** editable_api_id, editable_api_context, editable_api_version, editable_api_get_operation must point to an existing published API.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "44301428",
+    "_collection_link": "https://go.postman.co/collection/44301428-77f92713-c33d-4c77-b69a-81f214ceefaf?source=collection_link"
+  },
+  "item": [
+    {
+      "name": "00_Auth - DCR & Tokens",
+      "item": [
+        {
+          "name": "Dynamic Client Registration",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Build Basic Auth header from admin credentials",
+                  "const username = pm.environment.get('admin_username');",
+                  "const password = pm.environment.get('admin_password');",
+                  "pm.environment.set('basicAuthToken', btoa(`${username}:${password}`));"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// ── Validate DCR response ─────────────────────────────────────",
+                  "const statusCode = pm.response.code;",
+                  "pm.test(`DCR: Status is 200 or 201 (got ${statusCode})`, () => {",
+                  "    pm.expect(statusCode).to.be.oneOf([200, 201],",
+                  "        `Expected DCR to return 200 (existing) or 201 (new), got ${statusCode}. Check admin credentials and DCR endpoint.`);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.test('DCR: clientId present in response', () => {",
+                  "    pm.expect(json.clientId).to.exist",
+                  "        .and.to.be.a('string')",
+                  "        .and.to.have.length.above(0,",
+                  "        'DCR response missing clientId — verify the DCR endpoint and request body.');",
+                  "});",
+                  "",
+                  "pm.test('DCR: clientSecret present in response', () => {",
+                  "    pm.expect(json.clientSecret).to.exist",
+                  "        .and.to.be.a('string')",
+                  "        .and.to.have.length.above(0,",
+                  "        'DCR response missing clientSecret — client may already exist without secret rotation.');",
+                  "});",
+                  "",
+                  "// ── Store credentials ─────────────────────────────────────────",
+                  "pm.environment.set('client_id', json.clientId);",
+                  "pm.environment.set('client_secret', json.clientSecret);",
+                  "console.log(`DCR successful. clientId: ${json.clientId}`);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Basic {{basicAuthToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"callbackUrl\": \"{{callback_url}}\",\n  \"clientName\": \"{{application_name}}\",\n  \"owner\": \"{{admin_username}}\",\n  \"grantType\": \"client_credentials password refresh_token\",\n  \"saasApp\": true\n}"
+            },
+            "url": {
+              "raw": "{{control_plane_hostname}}/client-registration/v0.17/register",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "client-registration",
+                "v0.17",
+                "register"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Access Token",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Build Basic Auth from registered client credentials",
+                  "const cid = pm.environment.get('client_id');",
+                  "const csec = pm.environment.get('client_secret');",
+                  "if (!cid || !csec) {",
+                  "    throw new Error('client_id or client_secret not set. Run Dynamic Client Registration first.');",
+                  "}",
+                  "pm.environment.set('base64clientcredentials', btoa(`${cid}:${csec}`));"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// ── Validate token response ───────────────────────────────────",
+                  "pm.test(`Get Token: Status 200 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(200,",
+                  "        `Token request failed with ${pm.response.code}. Check client credentials and requested scopes.`);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.test('Get Token: access_token present in response', () => {",
+                  "    pm.expect(json.access_token).to.exist",
+                  "        .and.to.be.a('string')",
+                  "        .and.to.have.length.above(0,",
+                  "        'access_token missing from token response. Verify client credentials and grant_type.');",
+                  "});",
+                  "",
+                  "pm.test('Get Token: token_type is Bearer', () => {",
+                  "    pm.expect(json.token_type).to.eql('Bearer',",
+                  "        `Expected token_type 'Bearer', got '${json.token_type}'.`);",
+                  "});",
+                  "",
+                  "// ── Store token ───────────────────────────────────────────────",
+                  "pm.environment.set('access_token', json.access_token);",
+                  "console.log(`Access token acquired. expires_in: ${json.expires_in}s`);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Basic {{base64clientcredentials}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "password"
+                },
+                {
+                  "key": "username",
+                  "value": "{{admin_username}}"
+                },
+                {
+                  "key": "password",
+                  "value": "{{admin_password}}"
+                },
+                {
+                  "key": "scope",
+                  "value": "apim:subscribe apim:app_manage apim:sub_manage apim:app_import_export apim:app_overview apim:api_view apim:api_create apim:api_publish apim:api_delete apim:api_manage apim:api_import_export apim:api_generate_key apim:admin apim:tier_view apim:tier_manage apim:admin_operations apim:admin_settings apim:policies_import_export"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{keymanager-hostname}}/oauth2/token",
+              "host": [
+                "{{keymanager-hostname}}"
+              ],
+              "path": [
+                "oauth2",
+                "token"
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "Registers a DCR client and obtains a single access token with all required scopes covering Publisher, DevPortal, and Admin APIs."
+    },
+    {
+      "name": "01_Publisher - View APIs",
+      "item": [
+        {
+          "name": "List All APIs in Publisher",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Initialize pagination offset on first run only",
+                  "if (!pm.environment.get('api_offset')) {",
+                  "    pm.environment.set('api_offset', '0');",
+                  "    pm.environment.set('all_publisher_apis', JSON.stringify([]));",
+                  "}"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// ── Validate response ─────────────────────────────────────────",
+                  "pm.test(`List Publisher APIs: Status 200 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(200,",
+                  "        'Failed to list Publisher APIs. Verify access_token scope includes apim:api_view.');",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.test('List Publisher APIs: Response contains pagination info', () => {",
+                  "    pm.expect(json.pagination, 'Response missing pagination object — unexpected API response structure.').to.exist;",
+                  "    pm.expect(json.pagination, 'pagination.total is missing').to.have.property('total');",
+                  "});",
+                  "",
+                  "// ── Accumulate page results ───────────────────────────────────",
+                  "const LIMIT = 25;",
+                  "const total = json.pagination.total;",
+                  "const currentOffset = parseInt(pm.environment.get('api_offset') || '0');",
+                  "let allApis = JSON.parse(pm.environment.get('all_publisher_apis') || '[]');",
+                  "allApis = allApis.concat(json.list);",
+                  "pm.environment.set('all_publisher_apis', JSON.stringify(allApis));",
+                  "console.log(`Page offset ${currentOffset}: fetched ${json.list.length} API(s). Accumulated: ${allApis.length}/${total}`);",
+                  "",
+                  "const nextOffset = currentOffset + LIMIT;",
+                  "",
+                  "if (nextOffset < total) {",
+                  "    // ── More pages exist — loop back to this request ─────────",
+                  "    pm.environment.set('api_offset', String(nextOffset));",
+                  "    pm.execution.setNextRequest('List All APIs in Publisher');",
+                  "} else {",
+                  "    // ── All pages fetched — validate total count ──────────────",
+                  "    pm.environment.unset('api_offset');",
+                  "    const finalList = JSON.parse(pm.environment.get('all_publisher_apis'));",
+                  "    pm.test(`List Publisher APIs: Fetched all ${total} APIs (got ${finalList.length})`, () => {",
+                  "        pm.expect(finalList.length).to.eql(total,",
+                  "            `Pagination mismatch — expected ${total} APIs but accumulated ${finalList.length}.`);",
+                  "    });",
+                  "",
+                  "    // ── If no APIs exist, skip to Create New API ──────────────",
+                  "    if (total === 0) {",
+                  "        console.log('No APIs found in Publisher. Skipping to Create New API.');",
+                  "        pm.environment.set('no_apis', 'true');",
+                  "        pm.environment.unset('all_publisher_apis');",
+                  "        pm.execution.setNextRequest('Create New API');",
+                  "    } else {",
+                  "        console.log('=== All Publisher APIs collected ===');",
+                  "        console.log(JSON.stringify(finalList.map(a => ({",
+                  "            id: a.id, name: a.name, version: a.version, status: a.lifeCycleStatus",
+                  "        }))));",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/publisher/v4/apis?limit=25&offset={{api_offset}}",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "publisher",
+                "v4",
+                "apis"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "25"
+                },
+                {
+                  "key": "offset",
+                  "value": "{{api_offset}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get API by ID in Publisher",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Initialize index on first iteration",
+                  "if (!pm.environment.get('api_index')) {",
+                  "    pm.environment.set('api_index', '0');",
+                  "}",
+                  "",
+                  "const allApis = JSON.parse(pm.environment.get('all_publisher_apis') || '[]');",
+                  "const index = parseInt(pm.environment.get('api_index'));",
+                  "",
+                  "// Guard: ensure index is within bounds",
+                  "if (index >= allApis.length) {",
+                  "    console.error(`api_index (${index}) out of bounds (total: ${allApis.length}). Stopping.`);",
+                  "    pm.execution.setNextRequest(null);",
+                  "    return;",
+                  "}",
+                  "",
+                  "const currentApi = allApis[index];",
+                  "pm.environment.set('existing_api_id', currentApi.id);",
+                  "console.log(`[${index + 1}/${allApis.length}] Fetching Publisher API: ${currentApi.name} (${currentApi.id})`);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const allApis = JSON.parse(pm.environment.get('all_publisher_apis') || '[]');",
+                  "const index = parseInt(pm.environment.get('api_index'));",
+                  "const expected = allApis[index];",
+                  "const tag = `[${index + 1}/${allApis.length}] '${expected.name}'`;",
+                  "",
+                  "// ── Validate response ─────────────────────────────────────────",
+                  "pm.test(`${tag} Get Publisher API: Status 200 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(200,",
+                  "        `Failed to fetch API '${expected.name}' (${expected.id}). It may have been deleted.`);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.test(`${tag} id matches expected`, () => {",
+                  "    pm.expect(json.id).to.eql(expected.id,",
+                  "        `Returned API id '${json.id}' does not match expected '${expected.id}'.`);",
+                  "});",
+                  "",
+                  "pm.test(`${tag} name matches expected`, () => {",
+                  "    pm.expect(json.name).to.eql(expected.name,",
+                  "        `Returned name '${json.name}' does not match expected '${expected.name}'.`);",
+                  "});",
+                  "",
+                  "pm.test(`${tag} lifeCycleStatus is present`, () => {",
+                  "    pm.expect(json.lifeCycleStatus).to.be.a('string')",
+                  "        .and.to.have.length.above(0, 'lifeCycleStatus is empty or missing.');",
+                  "});",
+                  "",
+                  "// ── Advance to next API or finish ─────────────────────────────",
+                  "const nextIndex = index + 1;",
+                  "if (nextIndex < allApis.length) {",
+                  "    pm.environment.set('api_index', String(nextIndex));",
+                  "    pm.execution.setNextRequest('Get API by ID in Publisher');",
+                  "} else {",
+                  "    console.log(`=== Completed: fetched all ${allApis.length} Publisher APIs by ID ===`);",
+                  "    pm.environment.unset('api_index');",
+                  "    pm.environment.unset('all_publisher_apis');",
+                  "    pm.environment.unset('existing_api_id');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/publisher/v4/apis/{{existing_api_id}}",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "publisher",
+                "v4",
+                "apis",
+                "{{existing_api_id}}"
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "Paginates through all Publisher APIs using setNextRequest loop, then fetches full details for each API by ID."
+    },
+    {
+      "name": "02_DevPortal - View APIs",
+      "item": [
+        {
+          "name": "List All APIs in DevPortal",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Initialize pagination on first run only",
+                  "if (!pm.environment.get('api_offset')) {",
+                  "    pm.environment.set('api_offset', '0');",
+                  "    pm.environment.set('all_devportal_apis', JSON.stringify([]));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`List DevPortal APIs: Status 200 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(200,",
+                  "        'Failed to list DevPortal APIs. Verify access_token has apim:api_view scope.');",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "const LIMIT = 25;",
+                  "const total = json.pagination.total;",
+                  "const currentOffset = parseInt(pm.environment.get('api_offset') || '0');",
+                  "let allApis = JSON.parse(pm.environment.get('all_devportal_apis') || '[]');",
+                  "allApis = allApis.concat(json.list);",
+                  "pm.environment.set('all_devportal_apis', JSON.stringify(allApis));",
+                  "console.log(`Page offset ${currentOffset}: fetched ${json.list.length} API(s). Accumulated: ${allApis.length}/${total}`);",
+                  "",
+                  "const nextOffset = currentOffset + LIMIT;",
+                  "if (nextOffset < total) {",
+                  "    pm.environment.set('api_offset', String(nextOffset));",
+                  "    pm.execution.setNextRequest('List All APIs in DevPortal');",
+                  "} else {",
+                  "    pm.environment.unset('api_offset');",
+                  "    const finalList = JSON.parse(pm.environment.get('all_devportal_apis'));",
+                  "    pm.test(`List DevPortal APIs: Fetched all ${total} APIs (got ${finalList.length})`, () => {",
+                  "        pm.expect(finalList.length).to.eql(total,",
+                  "            `Pagination mismatch — expected ${total}, accumulated ${finalList.length}.`);",
+                  "    });",
+                  "    if (total === 0) {",
+                  "        console.log('No APIs visible in DevPortal. Skipping to Create New API.');",
+                  "        pm.execution.setNextRequest('Create New API');",
+                  "    } else {",
+                  "        console.log('=== All DevPortal APIs collected ===');",
+                  "        console.log(JSON.stringify(finalList.map(a => ({",
+                  "            id: a.id, name: a.name, version: a.version, status: a.lifeCycleStatus",
+                  "        }))));",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/devportal/v3/apis?limit=25&offset={{api_offset}}",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "devportal",
+                "v3",
+                "apis"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "25"
+                },
+                {
+                  "key": "offset",
+                  "value": "{{api_offset}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get API by ID in DevPortal",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "if (!pm.environment.get('api_index')) {",
+                  "    pm.environment.set('api_index', '0');",
+                  "}",
+                  "const allApis = JSON.parse(pm.environment.get('all_devportal_apis') || '[]');",
+                  "const index = parseInt(pm.environment.get('api_index'));",
+                  "if (index >= allApis.length) {",
+                  "    console.error(`api_index (${index}) out of bounds. Stopping.`);",
+                  "    return;",
+                  "}",
+                  "const currentApi = allApis[index];",
+                  "pm.environment.set('existing_api_id', currentApi.id);",
+                  "console.log(`[${index + 1}/${allApis.length}] Fetching DevPortal API: ${currentApi.name} (${currentApi.id})`);"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const allApis = JSON.parse(pm.environment.get('all_devportal_apis') || '[]');",
+                  "const index = parseInt(pm.environment.get('api_index'));",
+                  "const expected = allApis[index];",
+                  "const tag = `[${index + 1}/${allApis.length}] '${expected.name}'`;",
+                  "",
+                  "pm.test(`${tag} Get DevPortal API: Status 200 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(200,",
+                  "        `Failed to fetch API '${expected.name}' (${expected.id}). It may not be published.`);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.test(`${tag} id matches expected`, () => {",
+                  "    pm.expect(json.id).to.eql(expected.id,",
+                  "        `Returned id '${json.id}' does not match expected '${expected.id}'.`);",
+                  "});",
+                  "",
+                  "pm.test(`${tag} name matches expected`, () => {",
+                  "    pm.expect(json.name).to.eql(expected.name,",
+                  "        `Returned name '${json.name}' does not match expected '${expected.name}'.`);",
+                  "});",
+                  "",
+                  "const nextIndex = index + 1;",
+                  "if (nextIndex < allApis.length) {",
+                  "    pm.environment.set('api_index', String(nextIndex));",
+                  "    pm.execution.setNextRequest('Get API by ID in DevPortal');",
+                  "} else {",
+                  "    console.log(`=== Completed: fetched all ${allApis.length} DevPortal APIs by ID ===`);",
+                  "    pm.environment.unset('api_index');",
+                  "    // pm.environment.unset('all_devportal_apis');",
+                  "    pm.environment.unset('existing_api_id');",
+                  "}"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/devportal/v3/apis/{{existing_api_id}}",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "devportal",
+                "v3",
+                "apis",
+                "{{existing_api_id}}"
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "Paginates through all DevPortal APIs and fetches full details for each by ID."
+    },
+    {
+      "name": "03_Publisher - Edit & Republish Existing API",
+      "item": [
+        {
+          "name": "Get Existing API (for edit)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Get API for edit: Status 200 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(200,",
+                  "        `Failed to fetch editable API (${pm.environment.get('editable_api_id')}). Verify editable_api_id is set correctly in environment.`);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.test('Get API for edit: Response has expected fields', () => {",
+                  "    pm.expect(json.id).to.exist.and.to.eql(pm.environment.get('editable_api_id'),",
+                  "        `Returned id '${json.id}' does not match editable_api_id in environment.`);",
+                  "});",
+                  "",
+                  "// Store full payload for use in Update request",
+                  "pm.environment.set('editable_api_payload', JSON.stringify(json));",
+                  "console.log(`Fetched API for edit: ${json.name} v${json.version} [${json.lifeCycleStatus}]`);"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const editable_api_configured = (pm.environment.get('editable_api_id') != null && pm.environment.get('editable_api_id') != \"\");",
+                  "",
+                  "pm.environment.set('editable_api_configured', editable_api_configured);",
+                  "",
+                  "if (!editable_api_configured) {",
+                  "    pm.execution.setNextRequest('Create New API');",
+                  "    pm.execution.skipRequest();",
+                  "}"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/publisher/v4/apis/{{editable_api_id}}",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "publisher",
+                "v4",
+                "apis",
+                "{{editable_api_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Existing API",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Modify stored payload: add autotest tag and description marker",
+                  "let api = JSON.parse(pm.environment.get('editable_api_payload'));",
+                  "if (!api.tags) api.tags = [];",
+                  "if (!api.tags.includes('autotest')) api.tags.push('autotest');",
+                  "// Prevent duplicate marker on repeated runs",
+                  "if (!api.description || !api.description.includes('[AutoTest Updated]')) {",
+                  "    api.description = (api.description || '') + ' [AutoTest Updated]';",
+                  "}",
+                  "pm.environment.set('update_api_payload', JSON.stringify(api));",
+                  "console.log(`Updating API: ${api.name} — tags: ${JSON.stringify(api.tags)}`);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Update API: Status 200 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(200,",
+                  "        'API update failed. Check that the payload is valid and the API is in an editable state.');",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.test('Update API: autotest tag is present', () => {",
+                  "    pm.expect(json.tags).to.include('autotest',",
+                  "        `Expected tag 'autotest' in response tags [${json.tags}] but it was not found.`);",
+                  "});",
+                  "",
+                  "pm.test('Update API: description contains [AutoTest Updated]', () => {",
+                  "    pm.expect(json.description).to.include('[AutoTest Updated]',",
+                  "        `Description '${json.description}' does not contain the expected '[AutoTest Updated]' marker.`);",
+                  "});",
+                  "",
+                  "// Clean up temporary payloads",
+                  "pm.environment.unset('update_api_payload');",
+                  "pm.environment.unset('editable_api_payload');",
+                  "console.log(`API updated successfully: ${json.name}`);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{{update_api_payload}}"
+            },
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/publisher/v4/apis/{{editable_api_id}}",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "publisher",
+                "v4",
+                "apis",
+                "{{editable_api_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Revision for Existing API",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Create Revision: Status 201 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(201,",
+                  "        'Revision creation failed. Maximum revisions (5) may have been reached — delete an old revision first.');",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.test('Create Revision: revision id present', () => {",
+                  "    pm.expect(json.id).to.exist.and.to.be.a('string')",
+                  "        .and.to.have.length.above(0, 'Revision id missing from response.');",
+                  "});",
+                  "",
+                  "pm.environment.set('new_api_revision_id', json.id);",
+                  "console.log(`Revision created: ${json.id}`);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"description\": \"AutoTest revision\"}"
+            },
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/publisher/v4/apis/{{editable_api_id}}/revisions",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "publisher",
+                "v4",
+                "apis",
+                "{{editable_api_id}}",
+                "revisions"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Deploy Revision for Existing API",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Deploy Revision: Status 201 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(201,",
+                  "        `Revision deployment failed. Verify gateway_env '${pm.environment.get('gateway_env')}' exists and revision id '${pm.environment.get('new_api_revision_id')}' is valid.`);",
+                  "});",
+                  "",
+                  "pm.environment.unset('new_api_revision_id');",
+                  "console.log('Revision deployed to gateway: ' + pm.environment.get('gateway_env'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "[{\"name\": \"{{gateway_env}}\", \"vhost\": \"localhost\", \"displayOnDevportal\": true}]"
+            },
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/publisher/v4/apis/{{editable_api_id}}/deploy-revision?revisionId={{new_api_revision_id}}",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "publisher",
+                "v4",
+                "apis",
+                "{{editable_api_id}}",
+                "deploy-revision"
+              ],
+              "query": [
+                {
+                  "key": "revisionId",
+                  "value": "{{new_api_revision_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "Fetches editable_api_id, appends an autotest tag and description marker, creates a revision, deploys it, then republishes."
+    },
+    {
+      "name": "04_Publisher - Create & Publish New API",
+      "item": [
+        {
+          "name": "Create New API",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Generate unique API name using timestamp to avoid context conflicts on re-runs",
+                  "const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, '');",
+                  "const baseName = pm.environment.get('new_api_name') || 'AutoTestAPI';",
+                  "const uniqueName = `${baseName}_${timestamp}`;",
+                  "pm.environment.set('unique_api_name', uniqueName);",
+                  "console.log(`Creating API: ${uniqueName}`);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Create API: Status 201 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(201,",
+                  "        'API creation failed. Check for duplicate context or name conflicts.');",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "const expectedName = pm.environment.get('unique_api_name');",
+                  "",
+                  "pm.test('Create API: id present in response', () => {",
+                  "    pm.expect(json.id).to.exist.and.to.be.a('string')",
+                  "        .and.to.have.length.above(0, 'API id missing from creation response.');",
+                  "});",
+                  "",
+                  "pm.test(`Create API: name matches '${expectedName}'`, () => {",
+                  "    pm.expect(json.name).to.eql(expectedName,",
+                  "        `Returned name '${json.name}' does not match expected '${expectedName}'.`);",
+                  "});",
+                  "",
+                  "pm.test('Create API: initial lifeCycleStatus is CREATED', () => {",
+                  "    pm.expect(json.lifeCycleStatus).to.eql('CREATED',",
+                  "        `Expected status 'CREATED' immediately after creation, got '${json.lifeCycleStatus}'.`);",
+                  "});",
+                  "",
+                  "pm.environment.set('new_api_id', json.id);",
+                  "console.log(`API created: ${json.name} (${json.id})`);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n    \"name\": \"{{unique_api_name}}\",\n    \"description\": \"Automated test API created by Postman test suite\",\n    \"context\": \"/{{new_api_context}}\",\n    \"version\": \"{{new_api_version}}\",\n    \"provider\": \"{{admin_username}}\",\n    \"type\": \"HTTP\",\n    \"audience\": \"PUBLIC\",\n    \"transport\": [\"http\", \"https\"],\n    \"tags\": [\"autotest\"],\n    \"policies\": [\"Unlimited\"],\n    \"apiThrottlingPolicy\": \"Unlimited\",\n    \"authorizationHeader\": \"Authorization\",\n    \"securityScheme\": [\"oauth2\"],\n    \"visibility\": \"PUBLIC\",\n    \"visibleRoles\": [],\n    \"visibleTenants\": [],\n    \"endpointImplementationType\": \"ENDPOINT\",\n    \"endpointConfig\": {\n        \"endpoint_type\": \"http\",\n        \"sandbox_endpoints\": {\"url\": \"https://httpbin.org/anything\"},\n        \"production_endpoints\": {\"url\": \"https://httpbin.org/anything\"}\n    },\n    \"operations\": [\n        {\n            \"id\": \"\", \"target\": \"/test\", \"verb\": \"GET\",\n            \"authType\": \"Application & Application User\",\n            \"throttlingPolicy\": \"Unlimited\", \"scopes\": [],\n            \"usedProductIds\": [], \"amznResourceName\": null,\n            \"amznResourceTimeout\": null, \"amznResourceContentEncode\": null,\n            \"payloadSchema\": null, \"uriMapping\": null,\n            \"operationPolicies\": {\"request\": [], \"response\": [], \"fault\": []}\n        }\n    ],\n    \"subscriptionAvailability\": \"CURRENT_TENANT\",\n    \"isDefaultVersion\": false\n}"
+            },
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/publisher/v4/apis",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "publisher",
+                "v4",
+                "apis"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Revision for New API",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Create New API Revision: Status 201 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(201,",
+                  "        `Revision creation failed for API '${pm.environment.get('new_api_id')}'. Maximum revisions may have been reached.`);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.test('Create New API Revision: revision id present', () => {",
+                  "    pm.expect(json.id).to.exist.and.to.be.a('string')",
+                  "        .and.to.have.length.above(0, 'Revision id missing from response.');",
+                  "});",
+                  "",
+                  "pm.environment.set('new_api_revision_id', json.id);",
+                  "console.log(`New API revision created: ${json.id}`);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"description\": \"Initial AutoTest revision\"}"
+            },
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/publisher/v4/apis/{{new_api_id}}/revisions",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "publisher",
+                "v4",
+                "apis",
+                "{{new_api_id}}",
+                "revisions"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Deploy Revision for New API",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Deploy New API Revision: Status 201 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(201,",
+                  "        `Deployment failed. Verify gateway_env '${pm.environment.get('gateway_env')}' and revision id '${pm.environment.get('new_api_revision_id')}' are valid.`);",
+                  "});",
+                  "",
+                  "pm.environment.unset('new_api_revision_id');",
+                  "console.log('New API revision deployed to gateway: ' + pm.environment.get('gateway_env'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "[{\"name\": \"{{gateway_env}}\", \"vhost\": \"localhost\", \"displayOnDevportal\": true}]"
+            },
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/publisher/v4/apis/{{new_api_id}}/deploy-revision?revisionId={{new_api_revision_id}}",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "publisher",
+                "v4",
+                "apis",
+                "{{new_api_id}}",
+                "deploy-revision"
+              ],
+              "query": [
+                {
+                  "key": "revisionId",
+                  "value": "{{new_api_revision_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Publish New API",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Publish New API: Status 200 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(200,",
+                  "        'Publish lifecycle action failed. API must be in CREATED or PROTOTYPED state to publish.');",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.test('Publish New API: lifecycleState is Published', () => {",
+                  "    pm.expect(json.lifecycleState.state).to.eql('Published',",
+                  "        `Expected lifecycle state 'Published', got '${json.lifecycleState?.state}'. Check lifecycle transition rules.`);",
+                  "});",
+                  "",
+                  "console.log(`API published: ${pm.environment.get('new_api_id')}`);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/publisher/v4/apis/change-lifecycle?apiId={{new_api_id}}&action=Publish",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "publisher",
+                "v4",
+                "apis",
+                "change-lifecycle"
+              ],
+              "query": [
+                {
+                  "key": "apiId",
+                  "value": "{{new_api_id}}"
+                },
+                {
+                  "key": "action",
+                  "value": "Publish"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "Creates a new API with a timestamped unique name using httpbin.org as backend, creates a revision, deploys it, and publishes it."
+    },
+    {
+      "name": "05_DevPortal - Verify New API",
+      "item": [
+        {
+          "name": "Search New API in DevPortal",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Verify New API in DevPortal: Status 200 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(200,",
+                  "        'DevPortal API search request failed. Verify access token and endpoint.');",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "const newApiId = pm.environment.get('new_api_id');",
+                  "const uniqueName = pm.environment.get('unique_api_name');",
+                  "",
+                  "pm.test(`Verify New API in DevPortal: '${uniqueName}' is visible`, () => {",
+                  "    const found = json.list.some(api => api.id === newApiId);",
+                  "    pm.expect(found).to.be.true,",
+                  "        `API '${uniqueName}' (${newApiId}) not found in DevPortal search results. It may not be published yet or gateway sync is pending.`;",
+                  "});",
+                  "",
+                  "pm.environment.unset('unique_api_name');",
+                  "console.log(`New API '${uniqueName}' confirmed visible in DevPortal.`);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/devportal/v3/apis?query={{unique_api_name}}",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "devportal",
+                "v3",
+                "apis"
+              ],
+              "query": [
+                {
+                  "key": "query",
+                  "value": "{{unique_api_name}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "Searches the DevPortal for the newly published API by name and verifies it appears in the listing."
+    },
+    {
+      "name": "06_DevPortal - Applications & Keys",
+      "item": [
+        {
+          "name": "List All Existing Applications",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Initialize pagination on first run only",
+                  "if (!pm.environment.get('app_offset')) {",
+                  "    pm.environment.set('app_offset', '0');",
+                  "    pm.environment.set('all_apps', JSON.stringify([]));",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`List Applications: Status 200 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(200,",
+                  "        'Failed to list applications. Verify access_token has apim:app_manage scope.');",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "const LIMIT = 25;",
+                  "const total = json.pagination.total;",
+                  "const currentOffset = parseInt(pm.environment.get('app_offset') || '0');",
+                  "let allApps = JSON.parse(pm.environment.get('all_apps') || '[]');",
+                  "allApps = allApps.concat(json.list);",
+                  "pm.environment.set('all_apps', JSON.stringify(allApps));",
+                  "console.log(`Page offset ${currentOffset}: fetched ${json.list.length} app(s). Accumulated: ${allApps.length}/${total}`);",
+                  "",
+                  "const nextOffset = currentOffset + LIMIT;",
+                  "if (nextOffset < total) {",
+                  "    pm.environment.set('app_offset', String(nextOffset));",
+                  "    pm.execution.setNextRequest('List All Existing Applications');",
+                  "} else {",
+                  "    pm.environment.unset('app_offset');",
+                  "    const finalList = JSON.parse(pm.environment.get('all_apps'));",
+                  "    pm.test(`List Applications: Fetched all ${total} apps (got ${finalList.length})`, () => {",
+                  "        pm.expect(finalList.length).to.eql(total,",
+                  "            `Pagination mismatch — expected ${total}, accumulated ${finalList.length}.`);",
+                  "    });",
+                  "    if (total === 0) {",
+                  "        console.log('No applications found. Skipping to Create New Application.');",
+                  "        pm.environment.unset('all_apps');",
+                  "        pm.execution.setNextRequest('Create New Application');",
+                  "    } else {",
+                  "        console.log('=== All applications collected ===');",
+                  "        console.log(JSON.stringify(finalList.map(a => ({",
+                  "            id: a.applicationId, name: a.name, status: a.status",
+                  "        }))));",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/devportal/v3/applications?limit=25&offset={{app_offset}}",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "devportal",
+                "v3",
+                "applications"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "25"
+                },
+                {
+                  "key": "offset",
+                  "value": "{{app_offset}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Application OAuth Keys by ID",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Initialize index on first iteration",
+                  "if (!pm.environment.get('app_index')) {",
+                  "    pm.environment.set('app_index', '0');",
+                  "    pm.environment.set('all_apps_with_oauth_keys', JSON.stringify([]));",
+                  "}",
+                  "",
+                  "const allApps = JSON.parse(pm.environment.get('all_apps') || '[]');",
+                  "const index = parseInt(pm.environment.get('app_index'));",
+                  "",
+                  "if (index >= allApps.length) {",
+                  "    console.error(`app_index (${index}) out of bounds. Stopping.`);",
+                  "    pm.execution.setNextRequest(null);",
+                  "    return;",
+                  "}",
+                  "",
+                  "const currentApp = allApps[index];",
+                  "pm.environment.set('existing_app_id', currentApp.applicationId);",
+                  "console.log(`[${index + 1}/${allApps.length}] Fetching OAuth keys for: ${currentApp.name} (${currentApp.applicationId})`);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const allApps = JSON.parse(pm.environment.get('all_apps') || '[]');",
+                  "const index = parseInt(pm.environment.get('app_index'));",
+                  "const currentApp = allApps[index];",
+                  "const tag = `[${index + 1}/${allApps.length}] '${currentApp.name}'`;",
+                  "",
+                  "pm.test(`${tag} Get OAuth Keys: Status 200 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(200,",
+                  "        `Failed to fetch OAuth keys for app '${currentApp.name}' (${currentApp.applicationId}).`);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.test(`${tag} OAuth keys response has count and list`, () => {",
+                  "    pm.expect(json).to.have.property('count');",
+                  "    pm.expect(json).to.have.property('list').and.to.be.an('array');",
+                  "});",
+                  "",
+                  "// ── Merge app data with its OAuth keys ────────────────────────",
+                  "let allAppsWithOAuthKeys = JSON.parse(pm.environment.get('all_apps_with_oauth_keys') || '[]');",
+                  "allAppsWithOAuthKeys.push({ ...currentApp, oauthKeys: json.list || [] });",
+                  "pm.environment.set('all_apps_with_oauth_keys', JSON.stringify(allAppsWithOAuthKeys));",
+                  "",
+                  "if (json.list.length === 0) {",
+                  "    console.log(`  No OAuth keys found for app: ${currentApp.name}`);",
+                  "} else {",
+                  "    json.list.forEach(k => console.log(`  → [${k.keyType}] consumerKey: ${k.consumerKey} | state: ${k.keyState}`));",
+                  "}",
+                  "",
+                  "// ── Advance to next app or finish ─────────────────────────────",
+                  "const nextIndex = index + 1;",
+                  "if (nextIndex < allApps.length) {",
+                  "    pm.environment.set('app_index', String(nextIndex));",
+                  "    pm.execution.setNextRequest('Get Application OAuth Keys by ID');",
+                  "} else {",
+                  "    pm.environment.unset('app_index');",
+                  "    pm.environment.unset('existing_app_id');",
+                  "    pm.environment.unset('all_apps');",
+                  "    const finalList = JSON.parse(pm.environment.get('all_apps_with_oauth_keys'));",
+                  "    pm.test(`All apps with OAuth keys collected: got ${finalList.length}`, () => {",
+                  "        pm.expect(finalList.length).to.eql(allApps.length,",
+                  "            `Expected ${allApps.length} apps in result, got ${finalList.length}.`);",
+                  "    });",
+                  "    console.log('=== all_apps_with_oauth_keys ready ===');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/devportal/v3/applications/{{existing_app_id}}/oauth-keys",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "devportal",
+                "v3",
+                "applications",
+                "{{existing_app_id}}",
+                "oauth-keys"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Generate Token for Existing App",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const enable_existing_application_token_generation = pm.environment.get('enable_existing_application_token_generation') === 'true';",
+                  "",
+                  "if (!enable_existing_application_token_generation) {",
+                  "    pm.environment.unset('all_apps_with_oauth_keys');",
+                  "    pm.execution.skipRequest();",
+                  "}",
+                  "",
+                  "// ── Initialize indices on first run ───────────────────────────",
+                  "if (!pm.environment.get('token_app_index')) {",
+                  "    pm.environment.set('token_app_index', '0');",
+                  "    pm.environment.set('token_key_index', '0');",
+                  "}",
+                  "",
+                  "const allAppsWithKeys = JSON.parse(pm.environment.get('all_apps_with_oauth_keys') || '[]');",
+                  "const appIndex = parseInt(pm.environment.get('token_app_index'));",
+                  "const keyIndex = parseInt(pm.environment.get('token_key_index'));",
+                  "const currentApp = allAppsWithKeys[appIndex];",
+                  "",
+                  "// ── Skip apps with no OAuth keys ──────────────────────────────",
+                  "if (!currentApp.oauthKeys || currentApp.oauthKeys.length === 0) {",
+                  "    console.log(`App '${currentApp.name}' has no OAuth keys — skipping.`);",
+                  "    const nextAppIndex = appIndex + 1;",
+                  "    if (nextAppIndex < allAppsWithKeys.length) {",
+                  "        pm.environment.set('token_app_index', String(nextAppIndex));",
+                  "        pm.environment.set('token_key_index', '0');",
+                  "        pm.execution.setNextRequest('Generate Token for Existing App');",
+                  "    } else {",
+                  "        // All apps processed — clean up and move on",
+                  "        pm.environment.unset('token_app_index');",
+                  "        pm.environment.unset('token_key_index');",
+                  "        pm.environment.unset('all_apps_with_oauth_keys');",
+                  "        pm.execution.setNextRequest('Create New Application');",
+                  "    }",
+                  "    pm.execution.skipRequest();",
+                  "    return;",
+                  "}",
+                  "",
+                  "const currentKey = currentApp.oauthKeys[keyIndex];",
+                  "",
+                  "// ── Build Basic Auth from consumerKey:consumerSecret ──────────",
+                  "// Using direct /oauth2/token endpoint (more reliable than DevPortal wrapper)",
+                  "const basicAuth = btoa(`${currentKey.consumerKey}:${currentKey.consumerSecret}`);",
+                  "pm.environment.set('current_basic_auth', basicAuth);",
+                  "",
+                  "console.log(`[App ${appIndex + 1}/${allAppsWithKeys.length}] [Key ${keyIndex + 1}/${currentApp.oauthKeys.length}]`);",
+                  "console.log(`  → App: ${currentApp.name} | KeyType: ${currentKey.keyType} | consumerKey: ${currentKey.consumerKey}`);"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "function tokenPreview(token) {",
+                  "    return token ? token.substring(0, 20) + '...' : 'N/A';",
+                  "}",
+                  "",
+                  "const allAppsWithKeys = JSON.parse(pm.environment.get('all_apps_with_oauth_keys') || '[]');",
+                  "const appIndex = parseInt(pm.environment.get('token_app_index'));",
+                  "const keyIndex = parseInt(pm.environment.get('token_key_index'));",
+                  "const currentApp = allAppsWithKeys[appIndex];",
+                  "const currentKey = currentApp.oauthKeys[keyIndex];",
+                  "const tag = `[App ${appIndex + 1}/${allAppsWithKeys.length}] [Key ${keyIndex + 1}/${currentApp.oauthKeys.length}] '${currentApp.name}' [${currentKey.keyType}]`;",
+                  "",
+                  "// ── Validate token response ───────────────────────────────────",
+                  "// Note: direct /oauth2/token returns 'access_token' (snake_case)",
+                  "pm.test(`${tag} Generate Token: Status 200 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(200,",
+                  "        `Token generation failed for app '${currentApp.name}' [${currentKey.keyType}]. Verify consumerKey/consumerSecret are valid.`);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.test(`${tag} access_token present`, () => {",
+                  "    pm.expect(json.access_token).to.exist.and.to.be.a('string')",
+                  "        .and.to.have.length.above(0,",
+                  "        `access_token missing for '${currentApp.name}' [${currentKey.keyType}]. Check OAuth2 token endpoint response.`);",
+                  "});",
+                  "",
+                  "// ── Store token back into structure ───────────────────────────",
+                  "allAppsWithKeys[appIndex].oauthKeys[keyIndex].token = {",
+                  "    accessToken: json.access_token,",
+                  "    tokenScopes: json.scope ? json.scope.split(' ') : [],",
+                  "    validityTime: json.expires_in",
+                  "};",
+                  "pm.environment.set('all_apps_with_oauth_keys', JSON.stringify(allAppsWithKeys));",
+                  "console.log(`  ✓ Token generated: ${tokenPreview(json.access_token)} | expires_in: ${json.expires_in}s`);",
+                  "",
+                  "// ── Advance indices ───────────────────────────────────────────",
+                  "const nextKeyIndex = keyIndex + 1;",
+                  "if (nextKeyIndex < currentApp.oauthKeys.length) {",
+                  "    // More keys in the same app",
+                  "    pm.environment.set('token_key_index', String(nextKeyIndex));",
+                  "    pm.execution.setNextRequest('Generate Token for Existing App');",
+                  "} else {",
+                  "    const nextAppIndex = appIndex + 1;",
+                  "    if (nextAppIndex < allAppsWithKeys.length) {",
+                  "        // Move to next app, reset key index",
+                  "        pm.environment.set('token_app_index', String(nextAppIndex));",
+                  "        pm.environment.set('token_key_index', '0');",
+                  "        pm.execution.setNextRequest('Generate Token for Existing App');",
+                  "    } else {",
+                  "        // ── All done — final validation ───────────────────────",
+                  "        const finalList = JSON.parse(pm.environment.get('all_apps_with_oauth_keys'));",
+                  "        pm.test('All tokens generated for all apps and key types', () => {",
+                  "            finalList.forEach(app => {",
+                  "                app.oauthKeys.forEach(key => {",
+                  "                    pm.expect(key.token?.accessToken,",
+                  "                        `Missing token for app '${app.name}' [${key.keyType}]`).to.exist;",
+                  "                });",
+                  "            });",
+                  "        });",
+                  "        pm.environment.unset('token_app_index');",
+                  "        pm.environment.unset('token_key_index');",
+                  "        pm.environment.unset('current_basic_auth');",
+                  "        pm.environment.unset('all_apps_with_oauth_keys');",
+                  "        console.log('=== All tokens generated successfully ===');",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Basic {{current_basic_auth}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "client_credentials"
+                },
+                {
+                  "key": "scope",
+                  "value": "am_application_scope default"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{keymanager-hostname}}/oauth2/token",
+              "host": [
+                "{{keymanager-hostname}}"
+              ],
+              "path": [
+                "oauth2",
+                "token"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create New Application",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Generate unique app name with timestamp to avoid conflicts on re-runs",
+                  "const timestamp = new Date().toISOString().replace(/[-:.TZ]/g, '');",
+                  "const baseName = pm.environment.get('new_app_name') || 'AutoTestApp';",
+                  "const uniqueName = `${baseName}_${timestamp}`;",
+                  "pm.environment.set('unique_app_name', uniqueName);",
+                  "console.log(`Creating application: ${uniqueName}`);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Create App: Status 201 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(201,",
+                  "        'Application creation failed. An app with this name may already exist.');",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "const expectedName = pm.environment.get('unique_app_name');",
+                  "",
+                  "pm.test('Create App: applicationId present', () => {",
+                  "    pm.expect(json.applicationId).to.exist.and.to.be.a('string')",
+                  "        .and.to.have.length.above(0, 'applicationId missing from creation response.');",
+                  "});",
+                  "",
+                  "pm.test(`Create App: name matches '${expectedName}'`, () => {",
+                  "    pm.expect(json.name).to.eql(expectedName,",
+                  "        `Returned name '${json.name}' does not match expected '${expectedName}'.`);",
+                  "});",
+                  "",
+                  "pm.environment.set('new_app_id', json.applicationId);",
+                  "pm.environment.unset('unique_app_name');",
+                  "console.log(`Application created: ${json.name} (${json.applicationId})`);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{unique_app_name}}\",\n  \"throttlingPolicy\": \"Unlimited\",\n  \"description\": \"Automated test application\",\n  \"tokenType\": \"JWT\",\n  \"groups\": [],\n  \"attributes\": {}\n}"
+            },
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/devportal/v3/applications",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "devportal",
+                "v3",
+                "applications"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Generate Keys for New App",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Generate Keys: Status 200 or 201 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201],",
+                  "        `Key generation failed for new app '${pm.environment.get('new_app_id')}'. Status: ${pm.response.code}`);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.test('Generate Keys: keyMappingId present', () => {",
+                  "    pm.expect(json.keyMappingId).to.exist.and.to.be.a('string')",
+                  "        .and.to.have.length.above(0, 'keyMappingId missing from key generation response.');",
+                  "});",
+                  "",
+                  "pm.test('Generate Keys: consumerKey present', () => {",
+                  "    pm.expect(json.consumerKey).to.exist.and.to.be.a('string')",
+                  "        .and.to.have.length.above(0, 'consumerKey missing — key generation may have partially failed.');",
+                  "});",
+                  "",
+                  "pm.test('Generate Keys: consumerSecret present', () => {",
+                  "    pm.expect(json.consumerSecret).to.exist.and.to.be.a('string')",
+                  "        .and.to.have.length.above(0, 'consumerSecret missing — required for token generation.');",
+                  "});",
+                  "",
+                  "pm.environment.set('new_app_key_mapping_id', json.keyMappingId);",
+                  "pm.environment.set('new_app_consumer_key', json.consumerKey);",
+                  "pm.environment.set('new_app_consumer_secret', json.consumerSecret);",
+                  "pm.environment.set('new_app_additional_properties', JSON.stringify(json.additionalProperties || {}));",
+                  "console.log(`Keys generated for new app. consumerKey: ${json.consumerKey}`);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"keyType\": \"PRODUCTION\",\n  \"keyManager\": \"Resident Key Manager\",\n  \"grantTypesToBeSupported\": [\"password\", \"client_credentials\"],\n  \"callbackUrl\": \"\",\n  \"scopes\": [\"am_application_scope\", \"default\"],\n  \"validityTime\": 3600,\n  \"additionalProperties\": {}\n}"
+            },
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/devportal/v3/applications/{{new_app_id}}/generate-keys",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "devportal",
+                "v3",
+                "applications",
+                "{{new_app_id}}",
+                "generate-keys"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Generate Token for New App",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Build Basic Auth directly from consumerKey:consumerSecret",
+                  "// Using /oauth2/token directly — more reliable than DevPortal generate-token wrapper",
+                  "const consumerKey = pm.environment.get('new_app_consumer_key');",
+                  "const consumerSecret = pm.environment.get('new_app_consumer_secret');",
+                  "if (!consumerKey || !consumerSecret) {",
+                  "    throw new Error('new_app_consumer_key or new_app_consumer_secret not set. Run Generate Keys for New App first.');",
+                  "}",
+                  "pm.environment.set('new_app_basic_auth', btoa(`${consumerKey}:${consumerSecret}`));",
+                  "console.log(`Generating token for new app: ${pm.environment.get('new_app_id')}`);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Generate Token New App: Status 200 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(200,",
+                  "        `Token generation failed for new app. Verify consumerKey and consumerSecret are correct.`);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "// Note: direct /oauth2/token returns 'access_token' (snake_case)",
+                  "pm.test('Generate Token New App: access_token present', () => {",
+                  "    pm.expect(json.access_token).to.exist.and.to.be.a('string')",
+                  "        .and.to.have.length.above(0, 'access_token missing from token response.');",
+                  "});",
+                  "",
+                  "pm.environment.set('new_app_access_token', json.access_token);",
+                  "pm.environment.unset('new_app_basic_auth');",
+                  "console.log(`Token generated for new app. expires_in: ${json.expires_in}s`);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Basic {{new_app_basic_auth}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/x-www-form-urlencoded"
+              }
+            ],
+            "body": {
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "client_credentials"
+                },
+                {
+                  "key": "scope",
+                  "value": "am_application_scope default"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{keymanager-hostname}}/oauth2/token",
+              "host": [
+                "{{keymanager-hostname}}"
+              ],
+              "path": [
+                "oauth2",
+                "token"
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "Lists all applications with pagination, fetches OAuth keys per app, generates tokens via direct OAuth2 endpoint, then creates a new application and generates its keys and token."
+    },
+    {
+      "name": "07_DevPortal - Subscriptions",
+      "item": [
+        {
+          "name": "List Subscriptions for Existing API",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// ── Skip if no pre-existing APIs were found ───────────────────────",
+                  "if (pm.environment.get('no_apis') === 'true') {",
+                  "    console.log('no_apis flag set — skipping to Subscribe New App to New API.');",
+                  "    pm.execution.setNextRequest('Subscribe New App to New API');",
+                  "    pm.execution.skipRequest();",
+                  "    return;",
+                  "}",
+                  "",
+                  "const allApis = JSON.parse(pm.environment.get('all_devportal_apis') || '[]');",
+                  "",
+                  "// ── Initialize on first run ───────────────────────────────────────",
+                  "if (!pm.environment.get('sub_api_index')) {",
+                  "    pm.environment.set('sub_api_index', '0');",
+                  "    pm.environment.set('sub_offset', '0');",
+                  "    pm.environment.set('all_subscriptions', JSON.stringify([]));",
+                  "}",
+                  "",
+                  "const apiIndex = parseInt(pm.environment.get('sub_api_index'));",
+                  "",
+                  "// ── Guard: index out of bounds ────────────────────────────────────",
+                  "if (apiIndex >= allApis.length) {",
+                  "    console.error(`sub_api_index (${apiIndex}) out of bounds (total: ${allApis.length}). Stopping.`);",
+                  "    pm.execution.setNextRequest(null);",
+                  "    return;",
+                  "}",
+                  "",
+                  "const currentApi = allApis[apiIndex];",
+                  "pm.environment.set('existing_api_id', currentApi.id);",
+                  "console.log(`[API ${apiIndex + 1}/${allApis.length}] '${currentApi.name}' (${currentApi.id}) — offset: ${pm.environment.get('sub_offset')}`);"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`List Subscriptions: Status 200 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(200,",
+                  "        `Failed to list subscriptions for API '${pm.environment.get('existing_api_id')}'. Verify the API id is valid.`);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "const LIMIT = 25;",
+                  "const total = json.pagination.total;",
+                  "const currentOffset = parseInt(pm.environment.get('sub_offset') || '0');",
+                  "const allApis = JSON.parse(pm.environment.get('all_devportal_apis') || '[]');",
+                  "const apiIndex = parseInt(pm.environment.get('sub_api_index'));",
+                  "const currentApi = allApis[apiIndex];",
+                  "const tag = `[API ${apiIndex + 1}/${allApis.length}] '${currentApi.name}'`;",
+                  "",
+                  "// ── Accumulate this page into the running list ────────────────────",
+                  "let allSubs = JSON.parse(pm.environment.get('all_subscriptions') || '[]');",
+                  "allSubs = allSubs.concat(json.list);",
+                  "pm.environment.set('all_subscriptions', JSON.stringify(allSubs));",
+                  "console.log(`${tag} offset ${currentOffset}: fetched ${json.list.length} subscription(s). Accumulated total: ${allSubs.length}`);",
+                  "",
+                  "const nextOffset = currentOffset + LIMIT;",
+                  "",
+                  "if (nextOffset < total) {",
+                  "    // ── More pages for this API — loop back ───────────────────────",
+                  "    pm.environment.set('sub_offset', String(nextOffset));",
+                  "    pm.execution.setNextRequest('List Subscriptions for Existing API');",
+                  "",
+                  "} else {",
+                  "    // ── All pages for this API fetched ────────────────────────────",
+                  "    // Count only subscriptions belonging to this API for the assertion",
+                  "    const thisApiSubs = allSubs.filter(s => s.apiInfo?.id === currentApi.id);",
+                  "    pm.test(`${tag} subscription count matches pagination total (${total})`, () => {",
+                  "        pm.expect(thisApiSubs.length).to.eql(total,",
+                  "            `Expected ${total} subscriptions for '${currentApi.name}', found ${thisApiSubs.length} in accumulated list.`);",
+                  "    });",
+                  "",
+                  "    console.log(`${tag} subscriptions: ${json.list.map(s => s.applicationInfo?.name).join(', ') || 'none'}`);",
+                  "",
+                  "    const nextApiIndex = apiIndex + 1;",
+                  "",
+                  "    if (nextApiIndex < allApis.length) {",
+                  "        // ── Advance to next API, reset pagination offset ──────────",
+                  "        pm.environment.set('sub_api_index', String(nextApiIndex));",
+                  "        pm.environment.set('sub_offset', '0');",
+                  "        pm.execution.setNextRequest('List Subscriptions for Existing API');",
+                  "",
+                  "    } else {",
+                  "        // ── All APIs done — print final summary and clean up ──────",
+                  "        const finalList = JSON.parse(pm.environment.get('all_subscriptions'));",
+                  "",
+                  "        pm.test(`All subscriptions fetched across all ${allApis.length} APIs: total = ${finalList.length}`, () => {",
+                  "            pm.expect(finalList).to.be.an('array',",
+                  "                'all_subscriptions is not a valid array.');",
+                  "        });",
+                  "",
+                  "        console.log('=== All subscriptions collected ===');",
+                  "        console.log(JSON.stringify(finalList.map(s => ({",
+                  "            id: s.subscriptionId,",
+                  "            api: s.apiInfo?.name,",
+                  "            app: s.applicationInfo?.name,",
+                  "            status: s.status",
+                  "        }))));",
+                  "",
+                  "        // ── Clean up loop variables ───────────────────────────────",
+                  "        pm.environment.unset('sub_api_index');",
+                  "        pm.environment.unset('sub_offset');",
+                  "        pm.environment.unset('existing_api_id');",
+                  "        pm.environment.unset('all_subscriptions');",
+                  "        pm.environment.unset('all_devportal_apis');",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/devportal/v3/subscriptions?apiId={{existing_api_id}}",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "devportal",
+                "v3",
+                "subscriptions"
+              ],
+              "query": [
+                {
+                  "key": "apiId",
+                  "value": "{{existing_api_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Subscribe New App to Existing API",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Subscribe to Existing API: Status 201 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(201,",
+                  "        `Subscription failed. Verify new_app_id '${pm.environment.get('new_app_id')}' and editable_api_id '${pm.environment.get('editable_api_id')}' are valid and the API is published.`);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.test('Subscribe to Existing API: subscriptionId present', () => {",
+                  "    pm.expect(json.subscriptionId).to.exist.and.to.be.a('string')",
+                  "        .and.to.have.length.above(0, 'subscriptionId missing from response.');",
+                  "});",
+                  "",
+                  "pm.test('Subscribe to Existing API: status is UNBLOCKED', () => {",
+                  "    pm.expect(json.status).to.eql('UNBLOCKED',",
+                  "        `Expected subscription status 'UNBLOCKED', got '${json.status}'. Subscription may be pending approval.`);",
+                  "});",
+                  "",
+                  "pm.environment.set('new_subscription_id', json.subscriptionId);",
+                  "console.log(`Subscribed new app to existing API. subscriptionId: ${json.subscriptionId}`);"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const editable_api_configured = pm.environment.get('editable_api_configured');",
+                  "",
+                  "if (!editable_api_configured) {",
+                  "    pm.execution.skipRequest();",
+                  "}"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"apiId\": \"{{editable_api_id}}\",\n  \"applicationId\": \"{{new_app_id}}\",\n  \"throttlingPolicy\": \"Unlimited\",\n  \"requestedThrottlingPolicy\": \"Unlimited\"\n}"
+            },
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/devportal/v3/subscriptions",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "devportal",
+                "v3",
+                "subscriptions"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Subscribe New App to New API",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Subscribe to New API: Status 201 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(201,",
+                  "        `Subscription to new API failed. Verify new_app_id '${pm.environment.get('new_app_id')}' and new_api_id '${pm.environment.get('new_api_id')}' are set and the API is published.`);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.test('Subscribe to New API: subscriptionId present', () => {",
+                  "    pm.expect(json.subscriptionId).to.exist.and.to.be.a('string')",
+                  "        .and.to.have.length.above(0, 'subscriptionId missing from response.');",
+                  "});",
+                  "",
+                  "pm.test('Subscribe to New API: status is UNBLOCKED', () => {",
+                  "    pm.expect(json.status).to.eql('UNBLOCKED',",
+                  "        `Expected 'UNBLOCKED', got '${json.status}'. Subscription may require approval.`);",
+                  "});",
+                  "",
+                  "pm.environment.set('new_api_subscription_id', json.subscriptionId);",
+                  "pm.environment.set('new_api_subscription_status', json.status);",
+                  "console.log(`Subscribed new app to new API. subscriptionId: ${json.subscriptionId}`);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"apiId\": \"{{new_api_id}}\",\n  \"applicationId\": \"{{new_app_id}}\",\n  \"throttlingPolicy\": \"Unlimited\",\n  \"requestedThrottlingPolicy\": \"Unlimited\"\n}"
+            },
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/devportal/v3/subscriptions",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "devportal",
+                "v3",
+                "subscriptions"
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "Lists all subscriptions for the editable API, subscribes the new app to both the editable API and the new API."
+    },
+    {
+      "name": "08_Gateway - Invoke APIs",
+      "item": [
+        {
+          "name": "Invoke Existing API",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const editable_api_configured = pm.environment.get('editable_api_configured');",
+                  "",
+                  "if (!editable_api_configured) {",
+                  "    pm.execution.skipRequest();",
+                  "}",
+                  "",
+                  "// Skip if no pre-existing APIs were available",
+                  "if (pm.environment.get('no_apis') === 'true') {",
+                  "    console.log('no_apis flag set — skipping Invoke Existing API.');",
+                  "    pm.execution.skipRequest();",
+                  "}",
+                  "",
+                  "const tenant_domain = pm.environment.get('tenant') || 'carbon.super';",
+                  "",
+                  "if (tenant_domain != 'carbon.super') {",
+                  "    const tenant_specific_domain = `t/${tenant_domain}/`;",
+                  "    pm.environment.set('tenant_specific_domain', tenant_specific_domain);",
+                  "}"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const url = `${pm.environment.get('gateway_hostname')}/${pm.environment.get('editable_api_context')}/${pm.environment.get('editable_api_version')}/${pm.environment.get('editable_api_get_operation')}`;",
+                  "",
+                  "pm.test(`Invoke Existing API: Status 2xx (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201, 202],",
+                  "        `Existing API invocation returned ${pm.response.code}. URL: ${url}. Verify the API is deployed, subscription is active, and access token is valid.`);",
+                  "});",
+                  "",
+                  "pm.test('Invoke Existing API: Response time < 5000ms', () => {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(5000,",
+                  "        `Response time ${pm.response.responseTime}ms exceeded 5000ms threshold. Backend may be slow or unreachable.`);",
+                  "});",
+                  "",
+                  "pm.environment.unset('tenant_specific_domain');"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{new_app_access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_hostname}}/{{tenant_specific_domain}}{{editable_api_context}}/{{editable_api_version}}/{{editable_api_get_operation}}",
+              "host": [
+                "{{gateway_hostname}}"
+              ],
+              "path": [
+                "{{tenant_specific_domain}}{{editable_api_context}}",
+                "{{editable_api_version}}",
+                "{{editable_api_get_operation}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Invoke New API",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const url = `${pm.environment.get('gateway_hostname')}/${pm.environment.get('new_api_context')}/${pm.environment.get('new_api_version')}/test`;",
+                  "",
+                  "pm.test(`Invoke New API: Status 2xx (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201, 202],",
+                  "        `New API invocation returned ${pm.response.code}. URL: ${url}. Verify the API is deployed and the subscription + token are active. If 404, gateway sync may be pending.`);",
+                  "});",
+                  "",
+                  "pm.test('Invoke New API: Response time < 5000ms', () => {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(5000,",
+                  "        `Response time ${pm.response.responseTime}ms exceeded 5000ms. Backend httpbin.org may be slow.`);",
+                  "});",
+                  "",
+                  "pm.environment.unset('tenant_specific_domain');"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const tenant_domain = pm.environment.get('tenant') || 'carbon.super';",
+                  "",
+                  "if (tenant_domain != 'carbon.super') {",
+                  "    const tenant_specific_domain = `t/${tenant_domain}/`;",
+                  "    pm.environment.set('tenant_specific_domain', tenant_specific_domain);",
+                  "}"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{new_app_access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_hostname}}/{{tenant_specific_domain}}{{new_api_context}}/{{new_api_version}}/test",
+              "host": [
+                "{{gateway_hostname}}"
+              ],
+              "path": [
+                "{{tenant_specific_domain}}{{new_api_context}}",
+                "{{new_api_version}}",
+                "test"
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "Invokes the existing API and new API through the gateway using the new app's access token."
+    },
+    {
+      "name": "09_Admin - Throttling Policies",
+      "item": [
+        {
+          "name": "Create Advanced Throttling Policy",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Create Adv Policy: Status 201 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(201,",
+                  "        `Advanced throttling policy creation failed. A policy named '${pm.environment.get('adv_throttle_policy_name')}' may already exist.`);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "const expectedName = pm.environment.get('adv_throttle_policy_name');",
+                  "",
+                  "pm.test('Create Adv Policy: policyId present', () => {",
+                  "    pm.expect(json.policyId).to.exist.and.to.be.a('string')",
+                  "        .and.to.have.length.above(0, 'policyId missing from creation response.');",
+                  "});",
+                  "",
+                  "pm.test(`Create Adv Policy: name matches '${expectedName}'`, () => {",
+                  "    pm.expect(json.policyName).to.eql(expectedName,",
+                  "        `Returned name '${json.policyName}' does not match expected '${expectedName}'.`);",
+                  "});",
+                  "",
+                  "pm.environment.set('adv_throttle_policy_id', json.policyId);",
+                  "console.log(`Advanced throttling policy created: ${json.policyName} (${json.policyId})`);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"policyName\": \"{{adv_throttle_policy_name}}\",\n  \"displayName\": \"AutoTest Advanced Policy\",\n  \"description\": \"Automated test advanced throttling policy\",\n  \"isDeployed\": false,\n  \"defaultLimit\": {\n    \"type\": \"REQUESTCOUNTLIMIT\",\n    \"requestCount\": {\"timeUnit\": \"min\", \"unitTime\": 1, \"requestCount\": 1}\n  },\n  \"conditionalGroups\": []\n}"
+            },
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/admin/v4/throttling/policies/advanced",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "admin",
+                "v4",
+                "throttling",
+                "policies",
+                "advanced"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Advanced Throttling Policy",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Get Adv Policy: Status 200 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(200,",
+                  "        `Failed to retrieve advanced policy (${pm.environment.get('adv_throttle_policy_id')}). It may not have been created successfully.`);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "const expectedId = pm.environment.get('adv_throttle_policy_id');",
+                  "pm.test(`Get Adv Policy: policyId matches '${expectedId}'`, () => {",
+                  "    pm.expect(json.policyId).to.eql(expectedId,",
+                  "        `Returned policyId '${json.policyId}' does not match expected '${expectedId}'.`);",
+                  "});",
+                  "",
+                  "console.log(`Advanced policy verified: ${json.policyName}`);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/admin/v4/throttling/policies/advanced/{{adv_throttle_policy_id}}",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "admin",
+                "v4",
+                "throttling",
+                "policies",
+                "advanced",
+                "{{adv_throttle_policy_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Subscription Throttling Policy",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Create Sub Policy: Status 201 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(201,",
+                  "        `Subscription throttling policy creation failed. Policy '${pm.environment.get('sub_throttle_policy_name')}' may already exist.`);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "const expectedName = pm.environment.get('sub_throttle_policy_name');",
+                  "",
+                  "pm.test('Create Sub Policy: policyId present', () => {",
+                  "    pm.expect(json.policyId).to.exist.and.to.be.a('string')",
+                  "        .and.to.have.length.above(0, 'policyId missing from creation response.');",
+                  "});",
+                  "",
+                  "pm.test(`Create Sub Policy: name matches '${expectedName}'`, () => {",
+                  "    pm.expect(json.policyName).to.eql(expectedName,",
+                  "        `Returned name '${json.policyName}' does not match expected '${expectedName}'.`);",
+                  "});",
+                  "",
+                  "pm.environment.set('sub_throttle_policy_id', json.policyId);",
+                  "console.log(`Subscription throttling policy created: ${json.policyName} (${json.policyId})`);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"policyName\": \"{{sub_throttle_policy_name}}\",\n  \"displayName\": \"AutoTest Subscription Policy\",\n  \"description\": \"Automated test subscription throttling policy\",\n  \"isDeployed\": false,\n  \"defaultLimit\": {\n    \"type\": \"REQUESTCOUNTLIMIT\",\n    \"requestCount\": {\"timeUnit\": \"min\", \"unitTime\": 1, \"requestCount\": 1}\n  },\n  \"monetization\": {\"monetizationPlan\": \"FixedRate\"},\n  \"rateLimitCount\": 0,\n  \"rateLimitTimeUnit\": \"seconds\",\n  \"subscriberCount\": 0,\n  \"customAttributes\": [],\n  \"stopOnQuotaReach\": true,\n  \"billingPlan\": \"FREE\",\n  \"graphQLMaxComplexity\": 0,\n  \"graphQLMaxDepth\": 0,\n  \"permissions\": null\n}"
+            },
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/admin/v4/throttling/policies/subscription",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "admin",
+                "v4",
+                "throttling",
+                "policies",
+                "subscription"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Subscription Throttling Policy",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Get Sub Policy: Status 200 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(200,",
+                  "        `Failed to retrieve subscription policy (${pm.environment.get('sub_throttle_policy_id')}). Creation may have failed.`);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "const expectedId = pm.environment.get('sub_throttle_policy_id');",
+                  "pm.test(`Get Sub Policy: policyId matches '${expectedId}'`, () => {",
+                  "    pm.expect(json.policyId).to.eql(expectedId,",
+                  "        `Returned policyId '${json.policyId}' does not match expected '${expectedId}'.`);",
+                  "});",
+                  "",
+                  "console.log(`Subscription policy verified: ${json.policyName}`);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/admin/v4/throttling/policies/subscription/{{sub_throttle_policy_id}}",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "admin",
+                "v4",
+                "throttling",
+                "policies",
+                "subscription",
+                "{{sub_throttle_policy_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get New API (for throttle policy edit)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Get New API for throttle edit: Status 200 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(200,",
+                  "        `Failed to fetch new API (${pm.environment.get('new_api_id')}) for throttle policy update.`);",
+                  "});",
+                  "",
+                  "pm.environment.set('editable_api_payload', JSON.stringify(pm.response.json()));",
+                  "console.log('New API payload fetched for throttle policy update.');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/publisher/v4/apis/{{new_api_id}}",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "publisher",
+                "v4",
+                "apis",
+                "{{new_api_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Test Advanced Throttle Policy - Apply to API",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Apply advanced throttling policy to the new API",
+                  "let api = JSON.parse(pm.environment.get('editable_api_payload'));",
+                  "const advPolicyName = pm.environment.get('adv_throttle_policy_name');",
+                  "const subPolicyName = pm.environment.get('sub_throttle_policy_name');",
+                  "",
+                  "// Set API-level throttling policy",
+                  "api.apiThrottlingPolicy = advPolicyName;",
+                  "",
+                  "// Add subscription-level policy to available policies if not already present",
+                  "if (!api.policies) api.policies = [];",
+                  "if (!api.policies.includes(subPolicyName)) api.policies.push(subPolicyName);",
+                  "",
+                  "// Prevent duplicate description marker",
+                  "if (!api.description || !api.description.includes('[Added Adv Throttle Policy]')) {",
+                  "    api.description = (api.description || '') + ' [Added Adv Throttle Policy]';",
+                  "}",
+                  "",
+                  "pm.environment.set('update_api_payload', JSON.stringify(api));",
+                  "console.log(`Applying adv throttle policy '${advPolicyName}' to API '${api.name}'.`);"
+                ],
+                "type": "text/javascript"
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Apply Adv Throttle Policy: Status 200 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(200,",
+                  "        'Applying advanced throttle policy to API failed. Verify payload is valid.');",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "const expectedPolicy = pm.environment.get('adv_throttle_policy_name');",
+                  "pm.test(`Apply Adv Throttle Policy: apiThrottlingPolicy is '${expectedPolicy}'`, () => {",
+                  "    pm.expect(json.apiThrottlingPolicy).to.eql(expectedPolicy,",
+                  "        `Expected apiThrottlingPolicy '${expectedPolicy}', got '${json.apiThrottlingPolicy}'.`);",
+                  "});",
+                  "",
+                  "pm.environment.unset('update_api_payload');",
+                  "pm.environment.unset('editable_api_payload');",
+                  "console.log(`Advanced throttle policy applied to API: ${json.name}`);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{{update_api_payload}}"
+            },
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/publisher/v4/apis/{{new_api_id}}",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "publisher",
+                "v4",
+                "apis",
+                "{{new_api_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Test Subscription Throttle Policy - Apply to Subscription",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Apply Sub Throttle Policy: Status 200 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(200,",
+                  "        `Updating subscription throttling policy failed for subscription '${pm.environment.get('new_api_subscription_id')}'.`);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "const expectedPolicy = pm.environment.get('sub_throttle_policy_name');",
+                  "pm.test(`Apply Sub Throttle Policy: throttlingPolicy is '${expectedPolicy}'`, () => {",
+                  "    pm.expect(json.throttlingPolicy).to.eql(expectedPolicy,",
+                  "        `Expected throttlingPolicy '${expectedPolicy}', got '${json.throttlingPolicy}'. Verify the policy was added to the API's available policies list.`);",
+                  "});",
+                  "",
+                  "pm.environment.unset('new_api_subscription_status');",
+                  "console.log(`Subscription throttle policy applied. subscriptionId: ${json.subscriptionId}`);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"apiId\": \"{{new_api_id}}\",\n  \"applicationId\": \"{{new_app_id}}\",\n  \"throttlingPolicy\": \"{{sub_throttle_policy_name}}\",\n  \"requestedThrottlingPolicy\": \"{{sub_throttle_policy_name}}\",\n  \"status\": \"{{new_api_subscription_status}}\"\n}"
+            },
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/devportal/v3/subscriptions/{{new_api_subscription_id}}",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "devportal",
+                "v3",
+                "subscriptions",
+                "{{new_api_subscription_id}}"
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "Creates Advanced and Subscription throttling policies, verifies them, then applies them — Advanced to the new API, Subscription to the subscription."
+    },
+    {
+      "name": "10_DevPortal - Edit Application & Cleanup Subscriptions",
+      "item": [
+        {
+          "name": "Update New Application",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Update App: Status 200 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(200,",
+                  "        `Application update failed for app '${pm.environment.get('new_app_id')}'. It may have been deleted or the name conflicts with another app.`);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.test('Update App: description contains [Edited]', () => {",
+                  "    pm.expect(json.description).to.include('[Edited]',",
+                  "        `Expected description to include '[Edited]', got: '${json.description}'.`);",
+                  "});",
+                  "",
+                  "console.log(`Application updated: ${json.name}`);"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{new_app_name}}\",\n  \"throttlingPolicy\": \"Unlimited\",\n  \"description\": \"Automated test application [Edited]\",\n  \"tokenType\": \"JWT\",\n  \"groups\": [],\n  \"attributes\": {}\n}"
+            },
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/devportal/v3/applications/{{new_app_id}}",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "devportal",
+                "v3",
+                "applications",
+                "{{new_app_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Remove Subscription (New App - Existing API)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Skip if no existing APIs were available (subscription was never created)",
+                  "const editable_api_configured = pm.environment.get('editable_api_configured');",
+                  "",
+                  "if (!editable_api_configured) {",
+                  "    pm.execution.skipRequest();",
+                  "}",
+                  "",
+                  "if (pm.environment.get('no_apis') === 'true') {",
+                  "    console.log('no_apis flag set — skipping Remove Subscription (Existing API).');",
+                  "    pm.execution.skipRequest();",
+                  "}"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Remove Subscription (Existing API): Status 200 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(200,",
+                  "        `Failed to remove subscription '${pm.environment.get('new_subscription_id')}'. It may have already been deleted.`);",
+                  "});",
+                  "",
+                  "pm.environment.unset('new_subscription_id');",
+                  "console.log('Subscription to existing API removed.');"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/devportal/v3/subscriptions/{{new_subscription_id}}",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "devportal",
+                "v3",
+                "subscriptions",
+                "{{new_subscription_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Remove Subscription (New App - New API)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Remove Subscription (New API): Status 200 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(200,",
+                  "        `Failed to remove subscription '${pm.environment.get('new_api_subscription_id')}'. It may have already been deleted.`);",
+                  "});",
+                  "",
+                  "pm.environment.unset('new_api_subscription_id');",
+                  "console.log('Subscription to new API removed.');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/devportal/v3/subscriptions/{{new_api_subscription_id}}",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "devportal",
+                "v3",
+                "subscriptions",
+                "{{new_api_subscription_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Remove New Application",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Remove App: Status 200 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(200,",
+                  "        `Failed to delete application '${pm.environment.get('new_app_id')}'. It may have active subscriptions or already been deleted.`);",
+                  "});",
+                  "",
+                  "// Clean up all new app environment variables",
+                  "['new_app_id','new_app_key_mapping_id','new_app_additional_properties',",
+                  " 'new_app_access_token','new_app_consumer_key','new_app_consumer_secret'].forEach(k => pm.environment.unset(k));",
+                  "console.log('New application and all related env vars removed.');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/devportal/v3/applications/{{new_app_id}}",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "devportal",
+                "v3",
+                "applications",
+                "{{new_app_id}}"
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "Updates the new application's description, removes both subscriptions, then deletes the new application."
+    },
+    {
+      "name": "11_Publisher - Delete New API",
+      "item": [
+        {
+          "name": "Delete New API",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Delete New API: Status 200 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(200,",
+                  "        `Failed to delete API '${pm.environment.get('new_api_id')}'. Active subscriptions may need to be removed first, or the API may already be deleted.`);",
+                  "});",
+                  "",
+                  "pm.environment.unset('no_apis');",
+                  "pm.environment.unset('new_api_id');",
+                  "pm.environment.unset('editable_api_configured');",
+                  "console.log('New API deleted and environment cleaned up.');"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/publisher/v4/apis/{{new_api_id}}",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "publisher",
+                "v4",
+                "apis",
+                "{{new_api_id}}"
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "Deletes the newly created test API and clears related environment variables."
+    },
+    {
+      "name": "12_Admin - Delete Throttling Policies",
+      "item": [
+        {
+          "name": "Cleanup - Delete Advanced Throttling Policy",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Delete Adv Policy: Status 200 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(200,",
+                  "        `Failed to delete advanced throttling policy '${pm.environment.get('adv_throttle_policy_id')}'. It may be assigned to an active API.`);",
+                  "});",
+                  "",
+                  "pm.environment.unset('adv_throttle_policy_id');",
+                  "console.log('Advanced throttling policy deleted.');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/admin/v4/throttling/policies/advanced/{{adv_throttle_policy_id}}",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "admin",
+                "v4",
+                "throttling",
+                "policies",
+                "advanced",
+                "{{adv_throttle_policy_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Cleanup - Delete Subscription Throttling Policy",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Delete Sub Policy: Status 200 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(200,",
+                  "        `Failed to delete subscription throttling policy '${pm.environment.get('sub_throttle_policy_id')}'. It may be assigned to an active subscription.`);",
+                  "});",
+                  "",
+                  "pm.environment.unset('sub_throttle_policy_id');",
+                  "console.log('Subscription throttling policy deleted.');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/admin/v4/throttling/policies/subscription/{{sub_throttle_policy_id}}",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "admin",
+                "v4",
+                "throttling",
+                "policies",
+                "subscription",
+                "{{sub_throttle_policy_id}}"
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "description": "Cleans up the Advanced and Subscription throttling policies created during the test run."
+    }
+  ]
+}
