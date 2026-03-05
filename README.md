@@ -1,5 +1,6 @@
 # WSO2 APIM 4.x — Basic Functionality Test Suite
 
+![Static Badge](https://img.shields.io/badge/Tested-Pass-DarkGreen)
 ![APIM 4.4.0](https://img.shields.io/badge/WSO2_APIM-4.4.0-orange)
 ![APIM 4.5.0](https://img.shields.io/badge/WSO2_APIM-4.5.0-orange)
 ![APIM 4.6.0](https://img.shields.io/badge/WSO2_APIM-4.6.0-orange)
