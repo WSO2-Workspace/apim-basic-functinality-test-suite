@@ -32,9 +32,9 @@ All requests are designed to run sequentially in folder order (`00` → `12`) us
 | 06 | **DevPortal — Applications & Keys** | Paginated listing of all existing applications, Fetch OAuth keys per application, Generate tokens for all existing app key types _(optional — controlled by `enable_existing_application_token_generation`)_, Create new test application, Generate PRODUCTION OAuth keys, Generate access token |
 | 07 | **DevPortal — Subscriptions** | List all subscriptions for every DevPortal API with pagination, Subscribe new application to existing API _(skipped if `editable_api_id` is empty)_, Subscribe new application to new API |
 | 08 | **Gateway — Invoke APIs** | Invoke existing API through gateway using new app token, Invoke new API through gateway using new app token |
-| 09 | **Admin — Throttling Policies** | Create Advanced throttling policy; verify retrieval by ID, Create Subscription throttling policy, Verify retrieval by ID, Apply Advanced policy to new API, Apply Subscription policy to the new API's subscription |
+| 09 | **Admin — Throttling Policies** | Create Advanced throttling policy, Verify retrieval by ID, Create Subscription throttling policy, Verify retrieval by ID, Apply Advanced policy to new API, Create and deploy revision with Advanced policy, Invoke new API to verify Advanced throttling is enforced, Apply Subscription policy to new API and new subscription, Create and deploy revision with Subscription policy, Invoke new API to verify Subscription throttling is enforced |
 | 10 | **DevPortal — Edit Application & Cleanup** | Update new application description, Remove subscription to existing API _(skipped if `editable_api_id` is empty)_, Remove subscription to new API, Delete new application |
-| 11 | **Publisher — Delete New API** | Delete the newly created test API |
+| 11 | **Publisher — Delete New API** | Deprecate new API (lifecycle transition to Deprecated), Retire new API (lifecycle transition to Retired), Delete the newly created test API |
 | 12 | **Admin — Delete Throttling Policies** | Delete Advanced throttling policy, Delete Subscription throttling policy |
 
 ---
@@ -132,8 +132,15 @@ WSO2 APIM 4.x - Basic Functionality Test Suite
 │   ├── 📄 Create Subscription Throttling Policy
 │   ├── 📄 Get Subscription Throttling Policy
 │   ├── 📄 Get New API (for throttle policy edit)
-│   ├── 📄 Test Advanced Throttle Policy - Apply to API
-│   └── 📄 Test Subscription Throttle Policy - Apply to Subscription
+│   ├── 📄 Apply Advanced Throttle Policy to New API
+│   ├── 📄 Create Revision with Advanced Throttling Policy
+│   ├── 📄 Deploy Revision with Advanced Throttling Policy
+│   ├── 📄 Testing Advanced Throttling Policy in New API
+│   ├── 📄 Apply Subscription Throttle Policy to New API
+│   ├── 📄 Apply Subscription Throttle Policy to New Subscription
+│   ├── 📄 Create Revision with Subscription Throttling Policy
+│   ├── 📄 Deploy Revision with Subscription Throttling Policy
+│   └── 📄 Testing Subscription Throttling Policy in New API
 │
 ├── 📁 10_DevPortal - Edit Application & Cleanup Subscriptions
 │   ├── 📄 Update New Application
@@ -142,6 +149,8 @@ WSO2 APIM 4.x - Basic Functionality Test Suite
 │   └── 📄 Remove New Application
 │
 ├── 📁 11_Publisher - Delete New API
+│   ├── 📄 Deprecate New API
+│   ├── 📄 Retire New API
 │   └── 📄 Delete New API
 │
 └── 📁 12_Admin - Delete Throttling Policies

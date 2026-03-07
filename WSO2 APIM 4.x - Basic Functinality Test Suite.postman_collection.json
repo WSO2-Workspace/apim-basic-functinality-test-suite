@@ -2154,6 +2154,8 @@
                   "if (tenant_domain != 'carbon.super') {",
                   "    const tenant_specific_domain = `t/${tenant_domain}/`;",
                   "    pm.environment.set('tenant_specific_domain', tenant_specific_domain);",
+                  "} else {",
+                  "    pm.environment.set('tenant_specific_domain', '');",
                   "}"
                 ],
                 "type": "text/javascript",
@@ -2242,6 +2244,8 @@
                   "if (tenant_domain != 'carbon.super') {",
                   "    const tenant_specific_domain = `t/${tenant_domain}/`;",
                   "    pm.environment.set('tenant_specific_domain', tenant_specific_domain);",
+                  "} else {",
+                  "    pm.environment.set('tenant_specific_domain', '');",
                   "}"
                 ],
                 "type": "text/javascript",
@@ -2559,7 +2563,7 @@
           "response": []
         },
         {
-          "name": "Test Advanced Throttle Policy - Apply to API",
+          "name": "Apply Advanced Throttle Policy to New API",
           "event": [
             {
               "listen": "prerequest",
@@ -2568,14 +2572,9 @@
                   "// Apply advanced throttling policy to the new API",
                   "let api = JSON.parse(pm.environment.get('editable_api_payload'));",
                   "const advPolicyName = pm.environment.get('adv_throttle_policy_name');",
-                  "const subPolicyName = pm.environment.get('sub_throttle_policy_name');",
                   "",
                   "// Set API-level throttling policy",
                   "api.apiThrottlingPolicy = advPolicyName;",
-                  "",
-                  "// Add subscription-level policy to available policies if not already present",
-                  "if (!api.policies) api.policies = [];",
-                  "if (!api.policies.includes(subPolicyName)) api.policies.push(subPolicyName);",
                   "",
                   "// Prevent duplicate description marker",
                   "if (!api.description || !api.description.includes('[Added Adv Throttle Policy]')) {",
@@ -2585,30 +2584,33 @@
                   "pm.environment.set('update_api_payload', JSON.stringify(api));",
                   "console.log(`Applying adv throttle policy '${advPolicyName}' to API '${api.name}'.`);"
                 ],
-                "type": "text/javascript"
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
               }
             },
             {
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test(`Apply Adv Throttle Policy: Status 200 (got ${pm.response.code})`, () => {",
+                  "pm.test(`Apply Advanced Throttle Policy: Status 200 (got ${pm.response.code})`, () => {",
                   "    pm.expect(pm.response.code).to.eql(200,",
                   "        'Applying advanced throttle policy to API failed. Verify payload is valid.');",
                   "});",
                   "",
                   "const json = pm.response.json();",
                   "const expectedPolicy = pm.environment.get('adv_throttle_policy_name');",
-                  "pm.test(`Apply Adv Throttle Policy: apiThrottlingPolicy is '${expectedPolicy}'`, () => {",
+                  "pm.test(`Apply Advanced Throttle Policy: apiThrottlingPolicy is '${expectedPolicy}'`, () => {",
                   "    pm.expect(json.apiThrottlingPolicy).to.eql(expectedPolicy,",
                   "        `Expected apiThrottlingPolicy '${expectedPolicy}', got '${json.apiThrottlingPolicy}'.`);",
                   "});",
                   "",
                   "pm.environment.unset('update_api_payload');",
-                  "pm.environment.unset('editable_api_payload');",
                   "console.log(`Advanced throttle policy applied to API: ${json.name}`);"
                 ],
-                "type": "text/javascript"
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
               }
             }
           ],
@@ -2646,28 +2648,265 @@
           "response": []
         },
         {
-          "name": "Test Subscription Throttle Policy - Apply to Subscription",
+          "name": "Create Revision for with Advanced Throttling Policy",
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test(`Apply Sub Throttle Policy: Status 200 (got ${pm.response.code})`, () => {",
+                  "pm.test(`Create New API Revision with Advanced Throttling Policy: Status 201 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(201,",
+                  "        `Revision creation failed for API '${pm.environment.get('new_api_id')}'. Maximum revisions may have been reached.`);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.test('Create New API Revision with Advanced Throttling Policy: revision id present', () => {",
+                  "    pm.expect(json.id).to.exist.and.to.be.a('string')",
+                  "        .and.to.have.length.above(0, 'Revision id missing from response.');",
+                  "});",
+                  "",
+                  "pm.environment.set('new_api_revision_id', json.id);",
+                  "console.log(`New API revision with Advanced Throttling Policy created: ${json.id}`);"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"description\": \"Adding Advanced Throttling Policy revision\"}"
+            },
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/publisher/v4/apis/{{new_api_id}}/revisions",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "publisher",
+                "v4",
+                "apis",
+                "{{new_api_id}}",
+                "revisions"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Deploy Revision  with Advanced Throttling Policy",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Deploy New API Revision with Advanced Throttling Policy: Status 201 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(201,",
+                  "        `Deployment failed. Verify gateway_env '${pm.environment.get('gateway_env')}' and revision id '${pm.environment.get('new_api_revision_id')}' are valid.`);",
+                  "});",
+                  "",
+                  "pm.environment.unset('new_api_revision_id');",
+                  "console.log('New API revision with Advanced Throttling Policy deployed to gateway: ' + pm.environment.get('gateway_env'));"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "[{\"name\": \"{{gateway_env}}\", \"vhost\": \"localhost\", \"displayOnDevportal\": true}]"
+            },
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/publisher/v4/apis/{{new_api_id}}/deploy-revision?revisionId={{new_api_revision_id}}",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "publisher",
+                "v4",
+                "apis",
+                "{{new_api_id}}",
+                "deploy-revision"
+              ],
+              "query": [
+                {
+                  "key": "revisionId",
+                  "value": "{{new_api_revision_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Testing Advanced Throttling Policy in New API",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const throttling_index = pm.environment.get('throttling_index');",
+                  "",
+                  "if (throttling_index == 0) {",
+                  "    pm.environment.set('throttling_index', 1);",
+                  "    pm.execution.setNextRequest('Testing Advanced Throttling Policy in New API');",
+                  "} else if (throttling_index == 1) {",
+                  "    const url = `${pm.environment.get('gateway_hostname')}/${pm.environment.get('new_api_context')}/${pm.environment.get('new_api_version')}/test`;",
+                  "",
+                  "    pm.test(`Testing Advanced Throttling Policy in New API: Status 429 (got ${pm.response.code})`, () => {",
+                  "        pm.expect(pm.response.code).to.be.eql(429,",
+                  "            `New API invocation returned ${pm.response.code}. URL: ${url}. Verify the API is deployed and the throttling policies are applied. Also check whether the traffic manager is conncted.`);",
+                  "    });",
+                  "",
+                  "    const json = pm.response.json();",
+                  "    pm.test('Advanced Throttling Policy Applied Successfully', () => {",
+                  "        pm.expect(json.code).to.eql('900800',",
+                  "            `Expected exception code 900800, got '${json.code}'.`);",
+                  "    });",
+                  "",
+                  "    pm.environment.unset('tenant_specific_domain');",
+                  "    pm.environment.unset('throttling_index');",
+                  "}"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const tenant_domain = pm.environment.get('tenant') || 'carbon.super';",
+                  "",
+                  "if (tenant_domain != 'carbon.super') {",
+                  "    const tenant_specific_domain = `t/${tenant_domain}/`;",
+                  "    pm.environment.set('tenant_specific_domain', tenant_specific_domain);",
+                  "} else {",
+                  "    pm.environment.set('tenant_specific_domain', '');",
+                  "}",
+                  "",
+                  "if (!pm.environment.get('throttling_index')) {",
+                  "    pm.environment.set('throttling_index', '0');",
+                  "}",
+                  "",
+                  "const now = Date.now();",
+                  "const msUntilNextSecond = 1000 - (now % 1000);",
+                  "",
+                  "// Busy-wait until the next whole second",
+                  "const target = now + msUntilNextSecond;",
+                  "while (Date.now() < target) {}"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{new_app_access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_hostname}}/{{tenant_specific_domain}}{{new_api_context}}/{{new_api_version}}/test",
+              "host": [
+                "{{gateway_hostname}}"
+              ],
+              "path": [
+                "{{tenant_specific_domain}}{{new_api_context}}",
+                "{{new_api_version}}",
+                "test"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Apply Subscription Throttle Policy to New API",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Apply advanced throttling policy to the new API",
+                  "let api = JSON.parse(pm.environment.get('editable_api_payload'));",
+                  "const subPolicyName = pm.environment.get('sub_throttle_policy_name');",
+                  "",
+                  "// Add subscription-level policy to available policies if not already present",
+                  "if (!api.policies) api.policies = [];",
+                  "if (!api.policies.includes(subPolicyName)) api.policies.push(subPolicyName);",
+                  "",
+                  "// Prevent duplicate description marker",
+                  "if (!api.description || !api.description.includes('[Added Sub Throttle Policy]')) {",
+                  "    api.description = (api.description || '') + ' [Added Sub Throttle Policy]';",
+                  "}",
+                  "",
+                  "pm.environment.set('update_api_payload', JSON.stringify(api));",
+                  "console.log(`Applying subscription throttle policy '${subPolicyName}' to API '${api.name}'.`);"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Apply Subscription Throttle Policy: Status 200 (got ${pm.response.code})`, () => {",
                   "    pm.expect(pm.response.code).to.eql(200,",
-                  "        `Updating subscription throttling policy failed for subscription '${pm.environment.get('new_api_subscription_id')}'.`);",
+                  "        'Applying subscription throttle policy to API failed. Verify payload is valid.');",
                   "});",
                   "",
                   "const json = pm.response.json();",
                   "const expectedPolicy = pm.environment.get('sub_throttle_policy_name');",
-                  "pm.test(`Apply Sub Throttle Policy: throttlingPolicy is '${expectedPolicy}'`, () => {",
-                  "    pm.expect(json.throttlingPolicy).to.eql(expectedPolicy,",
-                  "        `Expected throttlingPolicy '${expectedPolicy}', got '${json.throttlingPolicy}'. Verify the policy was added to the API's available policies list.`);",
+                  "pm.test(`Apply Subscription Throttle Policy: apiThrottlingPolicy is '${expectedPolicy}'`, () => {",
+                  "    pm.expect(json.policies).to.contains(expectedPolicy,",
+                  "        `Expected policy '${expectedPolicy}', got '${json.policies}'.`);",
                   "});",
                   "",
-                  "pm.environment.unset('new_api_subscription_status');",
-                  "console.log(`Subscription throttle policy applied. subscriptionId: ${json.subscriptionId}`);"
+                  "pm.environment.unset('update_api_payload');",
+                  "pm.environment.unset('editable_api_payload');",
+                  "console.log(`Subscription throttle policy applied to API: ${json.name}`);"
                 ],
-                "type": "text/javascript"
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
               }
             }
           ],
@@ -2685,7 +2924,68 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"apiId\": \"{{new_api_id}}\",\n  \"applicationId\": \"{{new_app_id}}\",\n  \"throttlingPolicy\": \"{{sub_throttle_policy_name}}\",\n  \"requestedThrottlingPolicy\": \"{{sub_throttle_policy_name}}\",\n  \"status\": \"{{new_api_subscription_status}}\"\n}"
+              "raw": "{{update_api_payload}}"
+            },
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/publisher/v4/apis/{{new_api_id}}",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "publisher",
+                "v4",
+                "apis",
+                "{{new_api_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Apply Subscription Throttle Policy to New Subscription",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Apply Subscription Throttle Policy: Status 200 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(200,",
+                  "        `Updating subscription throttling policy failed for subscription '${pm.environment.get('new_api_subscription_id')}'.`);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "const expectedPolicy = pm.environment.get('sub_throttle_policy_name');",
+                  "pm.test(`Apply Subscription Throttle Policy: throttlingPolicy is '${expectedPolicy}'`, () => {",
+                  "    pm.expect(json.throttlingPolicy).to.eql(expectedPolicy,",
+                  "        `Expected throttlingPolicy '${expectedPolicy}', got '${json.throttlingPolicy}'. Verify the policy was added to the API's available policies list.`);",
+                  "});",
+                  "",
+                  "pm.environment.unset('new_api_subscription_status');",
+                  "console.log(`Subscription throttle policy applied. subscriptionId: ${json.subscriptionId}`);"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"apiId\": \"{{new_api_id}}\",\n  \"applicationId\": \"{{new_app_id}}\",\n  \"subscriptionId\": \"{{new_api_subscription_id}}\",\n  \"throttlingPolicy\": \"Unlimited\",\n  \"requestedThrottlingPolicy\": \"{{sub_throttle_policy_name}}\",\n  \"status\": \"{{new_api_subscription_status}}\"\n}"
             },
             "url": {
               "raw": "{{control_plane_hostname}}/api/am/devportal/v3/subscriptions/{{new_api_subscription_id}}",
@@ -2699,6 +2999,217 @@
                 "v3",
                 "subscriptions",
                 "{{new_api_subscription_id}}"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Revision for with Subscription Throttling Policy",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Create New API Revision with Subscription Throttling Policy: Status 201 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(201,",
+                  "        `Revision creation failed for API '${pm.environment.get('new_api_id')}'. Maximum revisions may have been reached.`);",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.test('Create New API Revision with Subscription Throttling Policy: revision id present', () => {",
+                  "    pm.expect(json.id).to.exist.and.to.be.a('string')",
+                  "        .and.to.have.length.above(0, 'Revision id missing from response.');",
+                  "});",
+                  "",
+                  "pm.environment.set('new_api_revision_id', json.id);",
+                  "console.log(`New API revision with Subscription Throttling Policy created: ${json.id}`);"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"description\": \"Adding Subscription Throttling Policy revision\"}"
+            },
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/publisher/v4/apis/{{new_api_id}}/revisions",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "publisher",
+                "v4",
+                "apis",
+                "{{new_api_id}}",
+                "revisions"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Deploy Revision  with Subscription Throttling Policy",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Deploy New API Revision with Subscription Throttling Policy: Status 201 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(201,",
+                  "        `Deployment failed. Verify gateway_env '${pm.environment.get('gateway_env')}' and revision id '${pm.environment.get('new_api_revision_id')}' are valid.`);",
+                  "});",
+                  "",
+                  "pm.environment.unset('new_api_revision_id');",
+                  "console.log('New API revision with Subscription Throttling Policy deployed to gateway: ' + pm.environment.get('gateway_env'));"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "[{\"name\": \"{{gateway_env}}\", \"vhost\": \"localhost\", \"displayOnDevportal\": true}]"
+            },
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/publisher/v4/apis/{{new_api_id}}/deploy-revision?revisionId={{new_api_revision_id}}",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "publisher",
+                "v4",
+                "apis",
+                "{{new_api_id}}",
+                "deploy-revision"
+              ],
+              "query": [
+                {
+                  "key": "revisionId",
+                  "value": "{{new_api_revision_id}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Testing Subscription Throttling Policy in New API",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const throttling_index = pm.environment.get('throttling_index');",
+                  "",
+                  "if (throttling_index == 0) {",
+                  "    pm.environment.set('throttling_index', 1);",
+                  "    pm.execution.setNextRequest('Testing Subscription Throttling Policy in New API');",
+                  "} else if (throttling_index == 1) {",
+                  "    const url = `${pm.environment.get('gateway_hostname')}/${pm.environment.get('new_api_context')}/${pm.environment.get('new_api_version')}/test`;",
+                  "",
+                  "    pm.test(`Testing Subscription Throttling Policy in New API: Status 429 (got ${pm.response.code})`, () => {",
+                  "        pm.expect(pm.response.code).to.be.eql(429,",
+                  "            `New API invocation returned ${pm.response.code}. URL: ${url}. Verify the API is deployed and the throttling policies are applied. Also check whether the traffic manager is conncted.`);",
+                  "    });",
+                  "",
+                  "    const json = pm.response.json();",
+                  "    pm.test('Subscription Throttling Policy Applied Successfully', () => {",
+                  "        pm.expect(json.code).to.eql('900804',",
+                  "            `Expected exception code 900804, got '${json.code}'.`);",
+                  "    });",
+                  "",
+                  "    pm.environment.unset('tenant_specific_domain');",
+                  "    pm.environment.unset('throttling_index');",
+                  "}"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const tenant_domain = pm.environment.get('tenant') || 'carbon.super';",
+                  "",
+                  "if (tenant_domain != 'carbon.super') {",
+                  "    const tenant_specific_domain = `t/${tenant_domain}/`;",
+                  "    pm.environment.set('tenant_specific_domain', tenant_specific_domain);",
+                  "} else {",
+                  "    pm.environment.set('tenant_specific_domain', '');",
+                  "}",
+                  "",
+                  "if (!pm.environment.get('throttling_index')) {",
+                  "    pm.environment.set('throttling_index', '0');",
+                  "}",
+                  "",
+                  "const now = Date.now();",
+                  "const msUntilNextSecond = 1000 - (now % 1000);",
+                  "",
+                  "// Busy-wait until the next whole second",
+                  "const target = now + msUntilNextSecond;",
+                  "while (Date.now() < target) {",
+                  "  // spin",
+                  "}"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{new_app_access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{gateway_hostname}}/{{tenant_specific_domain}}{{new_api_context}}/{{new_api_version}}/test",
+              "host": [
+                "{{gateway_hostname}}"
+              ],
+              "path": [
+                "{{tenant_specific_domain}}{{new_api_context}}",
+                "{{new_api_version}}",
+                "test"
               ]
             }
           },
