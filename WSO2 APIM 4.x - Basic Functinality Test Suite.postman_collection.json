@@ -1100,9 +1100,11 @@
                   "        `Expected lifecycle state 'Published', got '${json.lifecycleState?.state}'. Check lifecycle transition rules.`);",
                   "});",
                   "",
-                  "console.log(`API published: ${pm.environment.get('new_api_id')}`);"
+                  "console.log(`API Published: ${pm.environment.get('new_api_id')}`);"
                 ],
-                "type": "text/javascript"
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
               }
             }
           ],
@@ -2928,6 +2930,128 @@
     {
       "name": "11_Publisher - Delete New API",
       "item": [
+        {
+          "name": "Deprecate New API",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Deprecate New API: Status 200 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(200,",
+                  "        'Deprecate lifecycle action failed. API must be in PUBLISHED state to deprecate.');",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.test('Deprecate New API: lifecycleState is Deprecated', () => {",
+                  "    pm.expect(json.lifecycleState.state).to.eql('Deprecated',",
+                  "        `Expected lifecycle state 'Deprecated', got '${json.lifecycleState?.state}'. Check lifecycle transition rules.`);",
+                  "});",
+                  "",
+                  "console.log(`API Deprecated: ${pm.environment.get('new_api_id')}`);"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/publisher/v4/apis/change-lifecycle?apiId={{new_api_id}}&action=Deprecate",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "publisher",
+                "v4",
+                "apis",
+                "change-lifecycle"
+              ],
+              "query": [
+                {
+                  "key": "apiId",
+                  "value": "{{new_api_id}}"
+                },
+                {
+                  "key": "action",
+                  "value": "Deprecate"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Retire New API",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(`Retire New API: Status 200 (got ${pm.response.code})`, () => {",
+                  "    pm.expect(pm.response.code).to.eql(200,",
+                  "        'Retire lifecycle action failed. API must be in DEPRECATED state to retire.');",
+                  "});",
+                  "",
+                  "const json = pm.response.json();",
+                  "pm.test('Retire New API: lifecycleState is Retired', () => {",
+                  "    pm.expect(json.lifecycleState.state).to.eql('Retired',",
+                  "        `Expected lifecycle state 'Retired', got '${json.lifecycleState?.state}'. Check lifecycle transition rules.`);",
+                  "});",
+                  "",
+                  "console.log(`API Retired: ${pm.environment.get('new_api_id')}`);"
+                ],
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{control_plane_hostname}}/api/am/publisher/v4/apis/change-lifecycle?apiId={{new_api_id}}&action=Retire",
+              "host": [
+                "{{control_plane_hostname}}"
+              ],
+              "path": [
+                "api",
+                "am",
+                "publisher",
+                "v4",
+                "apis",
+                "change-lifecycle"
+              ],
+              "query": [
+                {
+                  "key": "apiId",
+                  "value": "{{new_api_id}}"
+                },
+                {
+                  "key": "action",
+                  "value": "Retire"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
         {
           "name": "Delete New API",
           "event": [
